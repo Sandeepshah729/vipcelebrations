@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vip-celebrations-site",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-08-25",
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "vip-celebrations-db",
+      "database_id": "2050d787-90e1-4b67-9c52-6345a4b2bb01",
+      "migrations_dir": "./migrations"
+    }
+  ],
+
+  "r2_buckets": [
+    {
+      "binding": "PHOTOS",
+      "bucket_name": "vip-celebrations-photos"
+    }
+  ],
+
+  "vars": {
+    "YOUTUBE_CHANNEL_HANDLE": "@vipcelebrations"
+  }
+}

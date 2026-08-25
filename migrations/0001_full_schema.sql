@@ -1,0 +1,68 @@
+CREATE TABLE IF NOT EXISTS programs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  slug TEXT NOT NULL UNIQUE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS budgets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  min_price INTEGER NOT NULL DEFAULT 0,
+  max_price INTEGER,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  is_active INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  setting_key TEXT NOT NULL UNIQUE,
+  setting_value TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS albums (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  description TEXT NOT NULL DEFAULT '',
+  program_id INTEGER,
+  budget_id INTEGER,
+  price INTEGER NOT NULL DEFAULT 1000,
+  cover_key TEXT,
+  youtube_url TEXT,
+  keywords TEXT NOT NULL DEFAULT '',
+  is_featured INTEGER NOT NULL DEFAULT 0,
+  is_published INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(program_id) REFERENCES programs(id),
+  FOREIGN KEY(budget_id) REFERENCES budgets(id)
+);
+
+CREATE TABLE IF NOT EXISTS photos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  album_id INTEGER NOT NULL,
+  object_key TEXT NOT NULL UNIQUE,
+  alt_text TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(album_id) REFERENCES albums(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS videos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  youtube_id TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  published_at TEXT,
+  thumbnail_url TEXT,
+  is_published INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE INDEX IF NOT EXISTS idx_albums_program ON albums(program_id);
+CREATE INDEX IF NOT EXISTS idx_albums_budget ON albums(budget_id);
+CREATE INDEX IF NOT EXISTS idx_albums_price ON albums(price);
+CREATE INDEX IF NOT EXISTS idx_albums_search ON albums(title, description, keywords);
+CREATE INDEX IF NOT EXISTS idx_photos_album ON photos(album_id);

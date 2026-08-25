@@ -1,9 +1,13 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "vip-celebrations-site",
+  "name": "vipcelebrations",
   "main": "src/worker.js",
   "compatibility_date": "2026-08-25",
-  "assets": { "directory": "./public", "binding": "ASSETS" },
+
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
 
   "d1_databases": [
     {
@@ -17,7 +21,7 @@
   "r2_buckets": [
     {
       "binding": "PHOTOS",
-      "bucket_name": "vip-celebrations-photos"
+      "bucket_name": "vipcelebrations-media"
     }
   ],
 

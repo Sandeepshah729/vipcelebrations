@@ -1,98 +1,59 @@
-const json = (data, status=200, extra={}) =>
-  new Response(JSON.stringify(data), {status, headers: {"content-type":"application/json; charset=utf-8", ...extra}});
-
-function slugify(s) {
-  return String(s||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
+const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json; charset=utf-8","cache-control":"no-store"}});
+const slugify=s=>String(s||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,90);
+const ytId=u=>{const s=String(u||"");const m=s.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/|embed\/))([A-Za-z0-9_-]{11})/);return m?m[1]:null};
+const auth=(req,env)=>{const k=req.headers.get("x-admin-key")||new URL(req.url).searchParams.get("key");return !!env.ADMIN_KEY&&k===env.ADMIN_KEY};
+async function all(db,sql,...binds){return (await db.prepare(sql).bind(...binds).all()).results||[]}
+async function getChannelId(env){
+ if(!env.YOUTUBE_API_KEY)return null;
+ const u=new URL("https://www.googleapis.com/youtube/v3/channels");u.searchParams.set("part","id");u.searchParams.set("forHandle",env.YOUTUBE_CHANNEL_HANDLE||"@vipcelebrations");u.searchParams.set("key",env.YOUTUBE_API_KEY);
+ const d=await (await fetch(u)).json();if(d.error)throw new Error(d.error.message||"YouTube API error");return d.items?.[0]?.id||null;
 }
-function youtubeId(url) {
-  const s = String(url||"");
-  const m = s.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/|embed\/))([A-Za-z0-9_-]{6,})/);
-  return m ? m[1] : null;
+async function syncYouTube(env){
+ const channelId=await getChannelId(env);if(!channelId)return {skipped:true};
+ const u=new URL("https://www.googleapis.com/youtube/v3/search");u.searchParams.set("part","snippet");u.searchParams.set("channelId",channelId);u.searchParams.set("type","video");u.searchParams.set("order","date");u.searchParams.set("maxResults","25");u.searchParams.set("key",env.YOUTUBE_API_KEY);
+ const d=await (await fetch(u)).json();if(d.error)throw new Error(d.error.message||"YouTube API error");
+ for(const x of d.items||[]){const id=x.id.videoId,s=x.snippet;await env.DB.prepare(`INSERT INTO videos(youtube_id,title,description,published_at,thumbnail_url,source) VALUES(?,?,?,?,?,?) ON CONFLICT(youtube_id) DO UPDATE SET title=excluded.title,description=excluded.description,published_at=excluded.published_at,thumbnail_url=excluded.thumbnail_url,source=excluded.source`).bind(id,s.title,s.description||"",s.publishedAt,s.thumbnails?.high?.url||s.thumbnails?.medium?.url||"", "channel-sync").run()}
+ return {count:(d.items||[]).length};
 }
-async function auth(req, env) {
-  const key = req.headers.get("x-admin-key") || new URL(req.url).searchParams.get("key");
-  return !!env.ADMIN_KEY && key === env.ADMIN_KEY;
+async function syncReviews(env){
+ if(!env.GOOGLE_PLACES_API_KEY)return {skipped:true};
+ let placeId=env.GOOGLE_PLACE_ID||"";
+ if(!placeId){
+  const sr=await fetch("https://places.googleapis.com/v1/places:searchText",{method:"POST",headers:{"Content-Type":"application/json","X-Goog-Api-Key":env.GOOGLE_PLACES_API_KEY,"X-Goog-FieldMask":"places.id,places.displayName,places.formattedAddress"},body:JSON.stringify({textQuery:"VIP CELEBRATIONS Waidhan Singrauli Madhya Pradesh",languageCode:"en"})});
+  const sd=await sr.json();placeId=sd.places?.[0]?.id||"";
+ }
+ if(!placeId)return {skipped:true};
+ const url=`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}?languageCode=en`;
+ const r=await fetch(url,{headers:{"X-Goog-Api-Key":env.GOOGLE_PLACES_API_KEY,"X-Goog-FieldMask":"id,displayName,rating,userRatingCount,reviews,googleMapsUri"}});
+ const d=await r.json();if(!r.ok)throw new Error(d.error?.message||"Google Places error");
+ await env.DB.prepare("INSERT INTO settings(setting_key,setting_value) VALUES('google_review_cache',?) ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value").bind(JSON.stringify({updated_at:new Date().toISOString(),data:d})).run();
+ return {count:(d.reviews||[]).length};
 }
-async function api(req, env) {
-  const u = new URL(req.url);
-  if (u.pathname === "/api/health") return json({ok:true, d1:!!env.DB, r2:!!env.PHOTOS});
-  if (u.pathname === "/api/settings") {
-    const r = await env.DB.prepare("SELECT setting_key,setting_value FROM settings").all();
-    return json(Object.fromEntries(r.results.map(x=>[x.setting_key,x.setting_value])));
-  }
-  if (u.pathname === "/api/programs") return json((await env.DB.prepare("SELECT * FROM programs WHERE is_active=1 ORDER BY sort_order").all()).results);
-  if (u.pathname === "/api/budgets") return json((await env.DB.prepare("SELECT * FROM budgets WHERE is_active=1 ORDER BY sort_order").all()).results);
-
-  if (u.pathname === "/api/albums") {
-    const q=(u.searchParams.get("q")||"").trim(), program=u.searchParams.get("program"), budget=u.searchParams.get("budget");
-    const sort=u.searchParams.get("sort")==="desc" ? "DESC" : "ASC";
-    let sql=`SELECT a.*,p.name program_name,b.name budget_name,
-      (SELECT COUNT(*) FROM photos ph WHERE ph.album_id=a.id) photo_count
-      FROM albums a LEFT JOIN programs p ON p.id=a.program_id LEFT JOIN budgets b ON b.id=a.budget_id
-      WHERE a.is_published=1`;
-    const binds=[];
-    if(q){sql += " AND (a.title LIKE ? OR a.description LIKE ? OR a.keywords LIKE ? OR p.name LIKE ? OR b.name LIKE ?)"; const x=`%${q}%`; binds.push(x,x,x,x,x);}
-    if(program){sql += " AND a.program_id=?"; binds.push(Number(program));}
-    if(budget){sql += " AND a.budget_id=?"; binds.push(Number(budget));}
-    sql += ` ORDER BY a.price ${sort}, a.id DESC`;
-    return json((await env.DB.prepare(sql).bind(...binds).all()).results);
-  }
-  if (u.pathname.startsWith("/api/albums/")) {
-    const id=Number(u.pathname.split("/").pop());
-    const a=await env.DB.prepare(`SELECT a.*,p.name program_name,b.name budget_name FROM albums a
-      LEFT JOIN programs p ON p.id=a.program_id LEFT JOIN budgets b ON b.id=a.budget_id WHERE a.id=?`).bind(id).first();
-    if(!a) return json({error:"Not found"},404);
-    const ph=(await env.DB.prepare("SELECT * FROM photos WHERE album_id=? ORDER BY sort_order,id").bind(id).all()).results;
-    return json({...a,photos:ph.map(x=>({...x,url:`/media/${encodeURIComponent(x.object_key)}`}))});
-  }
-  if (u.pathname === "/api/videos") return json((await env.DB.prepare("SELECT * FROM videos WHERE is_published=1 ORDER BY published_at DESC, id DESC LIMIT 10").all()).results);
-
-  if (!(await auth(req,env))) return json({error:"Admin authorization required"},401);
-
-  if (u.pathname === "/api/admin/album" && req.method==="POST") {
-    const b=await req.json(); const title=String(b.title||"").trim(); if(!title) return json({error:"Title required"},400);
-    const slug=slugify(b.slug||title)+"-"+Date.now().toString(36);
-    const r=await env.DB.prepare(`INSERT INTO albums(title,slug,description,program_id,budget_id,price,cover_key,youtube_url,keywords,is_featured)
-      VALUES(?,?,?,?,?,?,?,?,?,?)`).bind(title,slug,b.description||"",b.program_id?Number(b.program_id):null,b.budget_id?Number(b.budget_id):null,Math.max(1000,Number(b.price)||1000),b.cover_key||null,b.youtube_url||"",b.keywords||"",b.is_featured?1:0).run();
-    return json({ok:true,id:r.meta.last_row_id});
-  }
-  if (u.pathname === "/api/admin/setting" && req.method==="POST") {
-    const b=await req.json(); await env.DB.prepare("INSERT INTO settings(setting_key,setting_value) VALUES(?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value").bind(b.key,String(b.value||"")).run(); return json({ok:true});
-  }
-  if (u.pathname === "/api/admin/video" && req.method==="POST") {
-    const b=await req.json(), id=youtubeId(b.url||b.youtube_id); if(!id) return json({error:"Invalid YouTube URL"},400);
-    await env.DB.prepare(`INSERT INTO videos(youtube_id,title,description,published_at,thumbnail_url) VALUES(?,?,?,?,?)
-      ON CONFLICT(youtube_id) DO UPDATE SET title=excluded.title,description=excluded.description`).bind(id,b.title||id,b.description||"",b.published_at||new Date().toISOString(),`https://i.ytimg.com/vi/${id}/hqdefault.jpg`).run();
-    return json({ok:true,youtube_id:id});
-  }
-  if (u.pathname === "/api/admin/photo-upload" && req.method==="POST") {
-    if(!env.PHOTOS) return json({error:"R2 binding missing"},500);
-    const ct=req.headers.get("content-type")||"";
-    if(!ct.includes("multipart/form-data")) return json({error:"Use multipart/form-data"},400);
-    const form=await req.formData(), albumId=Number(form.get("album_id")), file=form.get("file");
-    if(!albumId || !file || typeof file.arrayBuffer!=="function") return json({error:"album_id and file required"},400);
-    const ext=(file.name||"jpg").split(".").pop().replace(/[^a-z0-9]/gi,"").slice(0,5)||"jpg";
-    const key=`albums/${albumId}/${crypto.randomUUID()}.${ext}`;
-    await env.PHOTOS.put(key, file.stream(), {httpMetadata:{contentType:file.type||"image/jpeg"}});
-    await env.DB.prepare("INSERT INTO photos(album_id,object_key,alt_text,sort_order) VALUES(?,?,?,COALESCE((SELECT MAX(sort_order)+1 FROM photos WHERE album_id=?),0))").bind(albumId,key,form.get("alt_text")||"",albumId).run();
-    return json({ok:true,key,url:`/media/${encodeURIComponent(key)}`});
-  }
-  return json({error:"Unknown API route"},404);
+async function api(req,env){
+ const u=new URL(req.url),p=u.pathname;
+ if(p==="/api/health")return json({ok:true,d1:!!env.DB,r2:!!env.PHOTOS});
+ if(p==="/api/gallery"){
+  const q=u.searchParams.get("q")?.trim()||"",program=u.searchParams.get("program")||"",budget=u.searchParams.get("budget")||"",view=u.searchParams.get("view")||"albums",limit=Math.min(Number(u.searchParams.get("limit")||12),50),offset=Math.max(Number(u.searchParams.get("offset")||0),0),sort=u.searchParams.get("sort")||"new";
+  if(view==="photos"){let sql=`SELECT ph.id,ph.object_key,ph.alt_text,a.slug,a.title album_title,p.name program_name FROM photos ph JOIN albums a ON a.id=ph.album_id LEFT JOIN programs p ON p.id=a.program_id WHERE a.is_published=1`;const b=[];if(program){sql+=" AND p.name=?";b.push(program)}if(budget){sql+=" AND b.name=?";b.push(budget)}if(q){sql+=" AND (a.title LIKE ? OR a.description LIKE ? OR a.keywords LIKE ?)";b.push(`%${q}%`,`%${q}%`,`%${q}%`)}sql+=" ORDER BY ph.sort_order ASC,ph.id DESC LIMIT ? OFFSET ?";b.push(limit+1,offset);const rows=await all(env.DB,sql,...b);return json({items:rows.slice(0,limit).map(x=>({...x,url:`/media/${encodeURIComponent(x.object_key)}`})),hasMore:rows.length>limit})}
+  let sql=`SELECT a.*,p.name program_name,b.name budget_name,(SELECT COUNT(*) FROM photos ph WHERE ph.album_id=a.id) photo_count,(SELECT ph.object_key FROM photos ph WHERE ph.album_id=a.id ORDER BY ph.sort_order,ph.id LIMIT 1) cover_key FROM albums a LEFT JOIN programs p ON p.id=a.program_id LEFT JOIN budgets b ON b.id=a.budget_id WHERE a.is_published=1`;const b=[];if(program){sql+=" AND p.name=?";b.push(program)}if(budget){sql+=" AND b.name=?";b.push(budget)}if(q){sql+=" AND (a.title LIKE ? OR a.description LIKE ? OR a.keywords LIKE ?)";b.push(`%${q}%`,`%${q}%`,`%${q}%`)}sql+=sort==="low"?" ORDER BY a.price ASC,a.id DESC":sort==="high"?" ORDER BY a.price DESC,a.id DESC":" ORDER BY a.created_at DESC,a.id DESC";sql+=" LIMIT ? OFFSET ?";b.push(limit+1,offset);const rows=await all(env.DB,sql,...b);return json({items:rows.slice(0,limit).map(x=>({...x,cover_url:x.cover_key?`/media/${encodeURIComponent(x.cover_key)}`:null})),hasMore:rows.length>limit})
+ }
+ if(p==="/api/videos"){const limit=Math.min(Number(u.searchParams.get("limit")||9),50);return json({items:await all(env.DB,"SELECT * FROM videos ORDER BY published_at DESC, id DESC LIMIT ?",limit)})}
+ if(p==="/api/posts"){const limit=Math.min(Number(u.searchParams.get("limit")||6),50);return json({items:await all(env.DB,"SELECT id,title,slug,excerpt,image_key,content,created_at FROM posts WHERE is_published=1 ORDER BY created_at DESC,id DESC LIMIT ?",limit)})}
+ if(p==="/api/search"){const q=(u.searchParams.get("q")||"").trim();if(!q)return json({albums:[],posts:[],videos:[]});const like=`%${q}%`;return json({albums:await all(env.DB,"SELECT a.slug,a.title,a.price,p.name program_name FROM albums a LEFT JOIN programs p ON p.id=a.program_id WHERE a.is_published=1 AND (a.title LIKE ? OR a.description LIKE ? OR a.keywords LIKE ?) ORDER BY a.created_at DESC LIMIT 12",like,like,like),posts:await all(env.DB,"SELECT slug,title,excerpt FROM posts WHERE is_published=1 AND (title LIKE ? OR content LIKE ? OR keywords LIKE ?) ORDER BY created_at DESC LIMIT 12",like,like,like),videos:await all(env.DB,"SELECT youtube_id,title,description FROM videos WHERE title LIKE ? OR description LIKE ? ORDER BY published_at DESC LIMIT 12",like,like)})}
+ if(p==="/api/reviews"){
+  const row=await env.DB.prepare("SELECT setting_value FROM settings WHERE setting_key='google_review_cache'").first();if(!row)return json({items:[]});
+  try{const d=JSON.parse(row.setting_value).data;return json({rating:d.rating||0,total:d.userRatingCount||0,items:(d.reviews||[]).map(r=>({author_name:r.authorAttribution?.displayName,text:r.originalText?.text||r.text?.text||"",relative_time_description:r.relativePublishTimeDescription}))})}catch{return json({items:[]})}
+ }
+ if(p==="/api/admin/sync"&&req.method==="POST"){if(!auth(req,env))return json({error:"Admin authorization required"},401);return json({youtube:await syncYouTube(env),reviews:await syncReviews(env)})}
+ if(p.startsWith("/api/admin/")&&req.method==="POST"){if(!auth(req,env))return json({error:"Admin authorization required"},401);const body=await req.json();
+  if(p==="/api/admin/program"){await env.DB.prepare("INSERT INTO programs(name,slug) VALUES(?,?) ON CONFLICT(slug) DO NOTHING").bind(body.name,slugify(body.name)).run();return json({ok:true})}
+  if(p==="/api/admin/budget"){await env.DB.prepare("INSERT INTO budgets(name,max_price,slug) VALUES(?,?,?) ON CONFLICT(slug) DO NOTHING").bind(body.name,Number(body.max_price||0),slugify(body.name)).run();return json({ok:true})}
+  if(p==="/api/admin/album"){const title=String(body.title||"").trim();if(!title)return json({error:"Title required"},400);await env.DB.prepare("INSERT INTO albums(title,slug,description,program_id,budget_id,price,keywords,youtube_url) VALUES(?,?,?,?,?,?,?,?)").bind(title,slugify(title),body.description||"",Number(body.program_id)||null,Number(body.budget_id)||null,Number(body.price||0),body.keywords||"",body.youtube_url||"").run();return json({ok:true})}
+  if(p==="/api/admin/post"){const title=String(body.title||"").trim();if(!title)return json({error:"Title required"},400);await env.DB.prepare("INSERT INTO posts(title,slug,excerpt,content,keywords,image_key,is_published) VALUES(?,?,?,?,?,?,1)").bind(title,slugify(title),body.excerpt||"",body.content||"",body.keywords||"",body.image_key||null).run();return json({ok:true})}
+  if(p==="/api/admin/video"){const id=ytId(body.url||body.youtube_id);if(!id)return json({error:"Valid YouTube URL required"},400);if(env.YOUTUBE_API_KEY){const channelId=await getChannelId(env);const u=`https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${id}&key=${env.YOUTUBE_API_KEY}`;const d=await(await fetch(u)).json();if(!channelId||d.items?.[0]?.snippet?.channelId!==channelId)return json({error:"This video is not from the configured VIP CELEBRATIONS channel."},400)}await env.DB.prepare("INSERT INTO videos(youtube_id,title,description,published_at,thumbnail_url,source) VALUES(?,?,?,?,?,?) ON CONFLICT(youtube_id) DO UPDATE SET title=excluded.title,description=excluded.description").bind(id,body.title||id,body.description||"",new Date().toISOString(),`https://i.ytimg.com/vi/${id}/hqdefault.jpg`,"admin").run();return json({ok:true})}
+  if(p==="/api/admin/photo"){if(!env.PHOTOS)return json({error:"R2 binding missing"},500);const ct=req.headers.get("content-type")||"";if(!ct.includes("multipart/form-data"))return json({error:"Use multipart/form-data"},400);const form=await req.formData(),albumId=Number(form.get("album_id")),file=form.get("file"),alt=form.get("alt_text")||"";if(!albumId||!file||typeof file==="string")return json({error:"Album and image required"},400);const ext=(file.name||"jpg").split(".").pop().toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,5)||"jpg";const key=`albums/${albumId}/${crypto.randomUUID()}.${ext}`;await env.PHOTOS.put(key,file.stream(),{httpMetadata:{contentType:file.type||"image/jpeg"}});await env.DB.prepare("INSERT INTO photos(album_id,object_key,alt_text,sort_order) VALUES(?,?,?,?)").bind(albumId,key,alt,0).run();return json({ok:true,url:`/media/${encodeURIComponent(key)}`})}
+  if(p==="/api/admin/setting"){await env.DB.prepare("INSERT INTO settings(setting_key,setting_value) VALUES(?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value").bind(body.key,body.value).run();return json({ok:true})}
+ }
+ return json({error:"Unknown API route"},404);
 }
-
-export default {
-  async fetch(req, env, ctx) {
-    const u=new URL(req.url);
-    try {
-      if(u.pathname.startsWith("/api/")) return await api(req,env);
-      if(u.pathname.startsWith("/media/")) {
-        if(!env.PHOTOS) return new Response("R2 not configured",{status:500});
-        const key=decodeURIComponent(u.pathname.slice("/media/".length));
-        const obj=await env.PHOTOS.get(key);
-        if(!obj) return new Response("Not found",{status:404});
-        return new Response(obj.body,{headers:{"content-type":obj.httpMetadata?.contentType||"image/jpeg","cache-control":"public,max-age=31536000,immutable"}});
-      }
-      return env.ASSETS.fetch(req);
-    } catch(e) { return json({error:e.message},500); }
-  }
-};
+export default {async fetch(req,env,ctx){const u=new URL(req.url);try{if(u.pathname.startsWith("/api/"))return await api(req,env);if(u.pathname.startsWith("/media/")){if(!env.PHOTOS)return new Response("R2 not configured",{status:500});const key=decodeURIComponent(u.pathname.slice(7));const obj=await env.PHOTOS.get(key);if(!obj)return new Response("Not found",{status:404});return new Response(obj.body,{headers:{"content-type":obj.httpMetadata?.contentType||"image/jpeg","cache-control":"public,max-age=31536000,immutable"}})}if(u.pathname.startsWith("/admin"))return env.ASSETS.fetch(new Request(new URL("/admin.html",u),req));if(u.pathname.startsWith("/album/"))return env.ASSETS.fetch(new Request(new URL("/album.html",u),req));if(u.pathname.startsWith("/post/"))return env.ASSETS.fetch(new Request(new URL("/post.html",u),req));return env.ASSETS.fetch(req)}catch(e){return json({error:e.message},500)}},async scheduled(event,env,ctx){ctx.waitUntil((async()=>{try{await syncYouTube(env)}catch{}try{await syncReviews(env)}catch{}})())}}

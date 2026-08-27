@@ -1,19 +1,11 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "vipcelebrations",
-  "main": "src/worker.js",
-  "compatibility_date": "2026-08-27",
-  "assets": { "directory": "./public", "binding": "ASSETS" },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "vip-celebrations-db",
-      "database_id": "4690d1e1-af42-4d21-a1f8-bf0d9d8d02d6",
-      "migrations_dir": "./migrations"
-    }
-  ],
-  "r2_buckets": [
-    { "binding": "PHOTOS", "bucket_name": "vipcelebrations-media" }
-  ],
-  "vars": { "YOUTUBE_CHANNEL_HANDLE": "@vipcelebrations" }
+  "$schema":"node_modules/wrangler/config-schema.json",
+  "name":"vipcelebrations",
+  "main":"src/worker.js",
+  "compatibility_date":"2026-08-27",
+  "assets":{"directory":"./public","binding":"ASSETS"},
+  "d1_databases":[{"binding":"DB","database_name":"vip-celebrations-db","database_id":"4690d1e1-af42-4d21-a1f8-bf0d9d8d02d6","migrations_dir":"./migrations"}],
+  "r2_buckets":[{"binding":"PHOTOS","bucket_name":"vipcelebrations-media"}],
+  "vars":{"YOUTUBE_CHANNEL_HANDLE":"@vipcelebrations"},
+  "triggers":{"crons":["*/30 * * * *"]}
 }

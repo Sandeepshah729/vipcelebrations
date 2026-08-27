@@ -1,37 +1,25 @@
-# VIP CELEBRATIONS — Premium Cloudflare Website
+# VIP CELEBRATIONS — Premium Dynamic Cloudflare Worker
 
-This package keeps the premium VIP CELEBRATIONS visual layout and adds the real Cloudflare backend: D1 for content and R2 for photos/logo.
+This project keeps the original premium frontend style while making gallery, photos, posts, videos and reviews data-driven.
 
-## Features
-- Premium responsive homepage based on the supplied VIP CELEBRATIONS design
-- D1-powered programs, budgets, albums/posts and YouTube videos
-- R2-powered photo and logo uploads
-- Album = one decoration post with any number of photos
-- Album detail route `/post/<slug>` with photo viewer and optional YouTube button
-- Gallery: Albums / All Photos, search, program filter, budget filter and price sorting
-- Search covers uploaded website posts and their descriptions; YouTube section is also searchable by the page search only when video data is loaded in the frontend
-- Admin panel at `/admin`
-- Admin can change logo, business links/settings, create albums, upload multiple photos and add/delete YouTube videos
-- Floating WhatsApp button
-- SEO metadata and mobile-first layout
+## Cloudflare resources
+- Worker + Assets
+- D1 binding: `DB`
+- R2 binding: `PHOTOS`
+- Admin secret: `ADMIN_KEY`
+- Optional YouTube secret: `YOUTUBE_API_KEY` (the Worker resolves `@vipcelebrations` to the channel ID automatically)
+- Optional Google secret: `GOOGLE_PLACES_API_KEY` (the Worker finds the VIP CELEBRATIONS place automatically; `GOOGLE_PLACE_ID` is optional)
 
-## Cloudflare resources expected
-- Worker: `vipcelebrations`
-- D1: `vip-celebrations-db`
-- D1 ID: `4690d1e1-af42-4d21-a1f8-bf0d9d8d02d6`
-- R2: `vipcelebrations-media`
-
-## One required security setting
-In Cloudflare Worker **Settings → Variables and Secrets**, add a secret named `ADMIN_PASSWORD`. Choose a strong password. The Admin page uses it for login.
+## Important
+YouTube search/sync is restricted server-side to `YOUTUBE_CHANNEL_ID`. Google reviews are read server-side from the configured Place ID. Never put API keys in frontend files.
 
 ## Deployment
-GitHub Builds can use:
-- Build command: blank
-- Deploy command: `npx wrangler deploy`
+1. Run `npm install`
+2. Ensure `wrangler.jsonc` has your real D1 database ID and R2 bucket name.
+3. Run migrations with `npx wrangler d1 migrations apply vip-celebrations-db --remote`
+4. Deploy with `npx wrangler deploy`
+5. In Cloudflare Worker Settings → Variables and Secrets, add `ADMIN_KEY` as a Secret.
+6. Optional: add `YOUTUBE_API_KEY` and `GOOGLE_PLACES_API_KEY` as Cloudflare Secrets. You do not need to find the channel ID or Place ID unless you prefer to set them explicitly.
+7. Open `/admin`, enter ADMIN_KEY, and use Sync.
 
-The repository must contain `package.json`, `wrangler.jsonc`, `src/`, `public/`, and `migrations/` at the repository root.
-
-After the first successful deployment, run the D1 migrations if the database does not already contain the tables:
-`npx wrangler d1 migrations apply vip-celebrations-db --remote`
-
-If the existing database already has the same tables/seed data from an earlier setup, do not run duplicate seed migrations.
+The scheduled Worker sync runs every 30 minutes after API credentials are configured.

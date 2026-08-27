@@ -2,13 +2,8 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "vipcelebrations",
   "main": "src/worker.js",
-  "compatibility_date": "2026-08-25",
-
-  "assets": {
-    "directory": "./public",
-    "binding": "ASSETS"
-  },
-
+  "compatibility_date": "2026-08-27",
+  "assets": { "directory": "./public", "binding": "ASSETS" },
   "d1_databases": [
     {
       "binding": "DB",
@@ -17,15 +12,8 @@
       "migrations_dir": "./migrations"
     }
   ],
-
   "r2_buckets": [
-    {
-      "binding": "PHOTOS",
-      "bucket_name": "vipcelebrations-media"
-    }
+    { "binding": "PHOTOS", "bucket_name": "vipcelebrations-media" }
   ],
-
-  "vars": {
-    "YOUTUBE_CHANNEL_HANDLE": "@vipcelebrations"
-  }
+  "vars": { "YOUTUBE_CHANNEL_HANDLE": "@vipcelebrations" }
 }

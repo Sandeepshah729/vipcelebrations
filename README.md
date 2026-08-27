@@ -1,39 +1,37 @@
-# VIP CELEBRATIONS — Cloudflare Worker + D1 + R2
+# VIP CELEBRATIONS — Premium Cloudflare Website
 
-This is the dashboard-friendly full-stack project for VIP CELEBRATIONS.
+This package keeps the premium VIP CELEBRATIONS visual layout and adds the real Cloudflare backend: D1 for content and R2 for photos/logo.
 
-## What is included
-- Premium mobile-first website
-- Unified search for website decoration albums
-- Program + budget filters
-- Price low/high sorting
-- Decoration albums with multiple photos
-- Per-album YouTube video button
-- Latest 10 managed YouTube videos
-- Admin panel
-- D1 database schema
-- R2 image storage
-- SEO title/description/keywords
-- WhatsApp, Maps, Facebook, Instagram, YouTube links
+## Features
+- Premium responsive homepage based on the supplied VIP CELEBRATIONS design
+- D1-powered programs, budgets, albums/posts and YouTube videos
+- R2-powered photo and logo uploads
+- Album = one decoration post with any number of photos
+- Album detail route `/post/<slug>` with photo viewer and optional YouTube button
+- Gallery: Albums / All Photos, search, program filter, budget filter and price sorting
+- Search covers uploaded website posts and their descriptions; YouTube section is also searchable by the page search only when video data is loaded in the frontend
+- Admin panel at `/admin`
+- Admin can change logo, business links/settings, create albums, upload multiple photos and add/delete YouTube videos
+- Floating WhatsApp button
+- SEO metadata and mobile-first layout
 
-## Recommended easiest deployment
-1. Create a GitHub repository and upload this entire folder.
-2. Cloudflare Dashboard → Workers & Pages → Create application → Import an existing Git repository.
-3. Connect GitHub and select the repository.
-4. Root directory: `/`
-5. Build command: leave blank.
-6. Deploy command: `npx wrangler deploy`
-7. After the first deployment, open Worker → Bindings and confirm:
-   - D1: `DB`
-   - R2: `PHOTOS`
-8. If R2 bucket does not exist, create `vip-celebrations-photos` first, then bind it as `PHOTOS`.
-9. Worker Settings → Variables/Secrets → add secret:
-   - `ADMIN_KEY` = a long random password
-10. Apply the D1 migrations from the D1 dashboard or with Wrangler:
-   `npx wrangler d1 migrations apply vip-celebrations-db --remote`
+## Cloudflare resources expected
+- Worker: `vipcelebrations`
+- D1: `vip-celebrations-db`
+- D1 ID: `4690d1e1-af42-4d21-a1f8-bf0d9d8d02d6`
+- R2: `vipcelebrations-media`
 
-## Important
-- The D1 ID in wrangler.jsonc is the database shown in the project setup screenshots. Verify it before deployment.
-- Google Business Profile reviews are intentionally not faked. To display live Google reviews, add the appropriate Google Places API credentials later.
-- YouTube auto-sync can be upgraded to YouTube Data API after adding a YouTube API key. The admin panel already supports manually adding/updating channel videos.
-- Never put an ADMIN_KEY in public JavaScript.
+## One required security setting
+In Cloudflare Worker **Settings → Variables and Secrets**, add a secret named `ADMIN_PASSWORD`. Choose a strong password. The Admin page uses it for login.
+
+## Deployment
+GitHub Builds can use:
+- Build command: blank
+- Deploy command: `npx wrangler deploy`
+
+The repository must contain `package.json`, `wrangler.jsonc`, `src/`, `public/`, and `migrations/` at the repository root.
+
+After the first successful deployment, run the D1 migrations if the database does not already contain the tables:
+`npx wrangler d1 migrations apply vip-celebrations-db --remote`
+
+If the existing database already has the same tables/seed data from an earlier setup, do not run duplicate seed migrations.

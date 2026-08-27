@@ -1,14 +1,7 @@
 {
-  "name": "vip-celebrations-cloudflare",
+  "name": "vipcelebrations",
   "version": "1.0.0",
   "private": true,
-  "type": "module",
-  "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "db:migrate": "wrangler d1 migrations apply vip_celebrations_db --remote"
-  },
-  "devDependencies": {
-    "wrangler": "^4.0.0"
-  }
+  "scripts": { "dev": "wrangler dev", "deploy": "wrangler deploy" },
+  "devDependencies": { "wrangler": "^4.31.0" }
 }

@@ -13,7 +13,7 @@
     {
       "binding": "DB",
       "database_name": "vip-celebrations-db",
-      "database_id": "2050d787-90e1-4b67-9c52-6345a4b2bb01",
+      "database_id": "4690d1e1-af42-4d21-a1f8-bf0d9d8d02d6",
       "migrations_dir": "./migrations"
     }
   ],
